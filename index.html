@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Relighting Method Showcase</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="mainCanvas"></canvas>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+
+
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+    import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18/+esm';
+
+    const canvas = document.getElementById('mainCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    const exrLoader = new EXRLoader();
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 8);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.target.set(0, 1.5, 0);
+    controls.update();
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+    ssaoPass.kernelRadius = 16;
+    composer.addPass(ssaoPass);
+
+    // Lights
+    const dirLight = new THREE.DirectionalLight(0xffffff, 3);
+    dirLight.position.set(5, 10, 7.5);
+    dirLight.castShadow = true;
+    const dirTarget = new THREE.Object3D();
+    dirTarget.position.set(0, 1.5, 0);
+    scene.add(dirLight, dirTarget);
+    dirLight.target = dirTarget;
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2);
+    scene.add(ambientLight);
+
+    const pointLight = new THREE.PointLight(0xffffff, 10, 20, 2);
+    pointLight.position.set(0, 3, 5);
+    pointLight.castShadow = true;
+    scene.add(pointLight);
+
+    const spotLight = new THREE.SpotLight(0xffffff, 10, 20, Math.PI / 6, 0.3, 2);
+    spotLight.position.set(0, 5, 5);
+    spotLight.castShadow = true;
+    spotLight.target.position.set(0, 1.5, 0);
+    scene.add(spotLight, spotLight.target);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+    hemiLight.position.set(0, 4, 0);
+    scene.add(hemiLight);
+
+    function disableAllLights() {
+      dirLight.visible = false;
+      ambientLight.visible = false;
+      pointLight.visible = false;
+      spotLight.visible = false;
+      hemiLight.visible = false;
+    }
+
+    function kelvinToColor(tempK) {
+      const t = tempK / 100;
+      let r, g, b;
+
+      r = t <= 66 ? 255 : 329.698727446 * Math.pow(t - 60, -0.1332047592);
+      g = t <= 66 ? 99.4708025861 * Math.log(t) - 161.1195681661 : 288.1221695283 * Math.pow(t - 60, -0.0755148492);
+      b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+
+      return new THREE.Color(
+        Math.min(Math.max(r, 0), 255) / 255,
+        Math.min(Math.max(g, 0), 255) / 255,
+        Math.min(Math.max(b, 0), 255) / 255
+      );
+    }
+
+    const gui = new GUI();
+
+    const lightControls = {
+      temperature: 6500,
+      useLocalLights: true,
+      useEnvMap: true,
+      environment: '1.exr'
+    };
+
+    const envMaps = ['1.exr', '1.exr', '1.exr'];
+  
+
+    function updateEnvMap(path) {
+  exrLoader.load(path, texture => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = lightControls.useEnvMap ? texture : null;
+    scene.background = texture;
+  });
+}
+
+
+    const lightingPresets = {
+      Daylight: () => {
+        disableAllLights();
+        if (lightControls.useLocalLights) {
+          dirLight.visible = true;
+          dirLight.intensity = 3;
+          dirLight.color = kelvinToColor(lightControls.temperature);
+        }
+      },
+      PointLight: () => {
+        disableAllLights();
+        if (lightControls.useLocalLights) {
+          pointLight.visible = true;
+          pointLight.intensity = 50;
+          pointLight.color = kelvinToColor(lightControls.temperature);
+        }
+      },
+      SpotLight: () => {
+        disableAllLights();
+        if (lightControls.useLocalLights) {
+          spotLight.visible = true;
+          spotLight.intensity = 50;
+          spotLight.color = kelvinToColor(lightControls.temperature);
+        }
+      },
+      Ambient: () => {
+        disableAllLights();
+        if (lightControls.useLocalLights) {
+          ambientLight.visible = true;
+          ambientLight.intensity = 3;
+          ambientLight.color = kelvinToColor(lightControls.temperature);
+        }
+      },
+      Fluorescent: () => {
+        disableAllLights();
+        if (lightControls.useLocalLights) {
+          hemiLight.visible = true;
+          hemiLight.intensity = 3;
+          hemiLight.color = kelvinToColor(lightControls.temperature);
+        }
+      }
+    };
+
+    const presets = { theme: 'Ambient' };
+    const presetFolder = gui.addFolder('Lighting Types');
+    presetFolder.add(presets, 'theme', Object.keys(lightingPresets)).name('Light Setup').onChange(theme => {
+      lightingPresets[theme]();
+    });
+    presetFolder.open();
+
+    gui.add(lightControls, 'temperature', 1000, 20000, 100).name('Color Temperature (K)').onChange(() => {
+      lightingPresets[presets.theme]();
+    });
+    gui.add(lightControls, 'useLocalLights').name('Enable Local Lights').onChange(() => {
+      lightingPresets[presets.theme]();
+    });
+    gui.add(lightControls, 'useEnvMap').name('Enable Global Light').onChange(() => {
+      updateEnvMap(lightControls.environment);
+    });
+    gui.add(lightControls, 'environment', envMaps).name('Environment Map').onChange(value => {
+      updateEnvMap(value);
+    });
+
+    updateEnvMap(lightControls.environment);
+    lightingPresets[presets.theme]();
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(2.5, 64),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x888888,
+        roughness: 0.3,
+        metalness: 0.0,
+        reflectivity: 0.5,
+        clearcoat: 0.1
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    let currentModel = null;
+    const modelFiles = {
+      'Model 1': 'svo2.obj',
+      'Model 2': 'svo3.obj',
+      'Model 3': 'svo5.obj',
+      'Model 4': 'svo6.obj',
+      'Model 5': 'svo7.obj',
+      'Model 6': 'svo8.obj',
+      'Model 7': 'svo9.obj',
+      'Model 8': 'svo10.obj',
+      'Model 9': 'svo11.obj',
+      'Model 10': 'svo12.obj'
+    };
+
+    const modelSettings = {
+      selectedModel: 'Model 1'
+    };
+
+    function loadModel(filePath) {
+      const loader = new OBJLoader();
+      loader.load(filePath, obj => {
+        if (currentModel) {
+          scene.remove(currentModel);
+          currentModel.traverse(child => {
+            if (child.isMesh) {
+              child.geometry.dispose();
+              if (child.material) child.material.dispose();
+            }
+          });
+        }
+
+        obj.position.set(0, 1.85, 0);
+        obj.scale.x *= -1;
+
+        obj.traverse(child => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.material = new THREE.MeshPhysicalMaterial({
+              vertexColors: !!child.geometry.attributes.color,
+              roughness: 0.8,
+              metalness: 0.0,
+              envMapIntensity: 1.0,
+              clearcoat: 0.05,
+              clearcoatRoughness: 0.05,
+              transmission: 0.05
+            });
+          }
+        });
+
+        currentModel = obj;
+        scene.add(currentModel);
+      });
+    }
+
+    const modelFolder = gui.addFolder('Model Selection');
+    modelFolder.add(modelSettings, 'selectedModel', Object.keys(modelFiles)).onChange(modelName => {
+      loadModel(modelFiles[modelName]);
+    });
+    modelFolder.open();
+
+    loadModel(modelFiles[modelSettings.selectedModel]);
+
+    function render() {
+      composer.render();
+    }
+
+    renderer.setAnimationLoop(render);
+  </script>
+</body>
+</html>
